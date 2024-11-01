@@ -5,10 +5,10 @@ install.packages("hms")
 library(hms)
 
 ## load data
-resp <- read.csv("/Users/fridahntika/Documents/DS340H/Capstone-Project/Data/atusresp-2023/atusresp_2023.dat",header=TRUE)
-ros <- read.csv("/Users/fridahntika/Documents/DS340H/Capstone-Project/Data/atusrost-2023/atusrost_2023.dat",header=TRUE)
-act <- read.csv("/Users/fridahntika/Documents/DS340H/Capstone-Project/Data/atusact-2023/atusact_2023.dat",header=TRUE)
-who <- read.csv("/Users/fridahntika/Documents/DS340H/Capstone-Project/Data/atuswho-2023/atuswho_2023.dat",header=TRUE)
+resp <- read.csv(file.choose())
+ros <- read.csv(file.choose())
+act <- read.csv(file.choose())
+who <- read.csv(file.choose())
 
 ## explore data
 # size
