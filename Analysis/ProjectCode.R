@@ -89,6 +89,13 @@ chores_summary2 <- choredf %>% group_by(TESEX) %>%
   summarise(average_time = mean(duration_mins, na.rm = TRUE),
             count = n())
 chores_summary2
+
+# filter chores by employment status and gender
+chores_summary3 <- chores_both %>% group_by(status, TESEX) %>%
+  summarise(average_time = mean(duration_mins, na.rm = TRUE),
+            count = n())
+chores_summary3
+
 # ---------------------------analyzing childcare ---------------------------
 # get each of the activities separately
 children <- actdf %>% filter(TRTIER2 %in% childcareCodes)
