@@ -6,6 +6,8 @@ library(hms)
 library(ggplot2)
 #install.packages("rsample")
 library(rsample)
+#install.packages("caret")
+library(caret)
 
 ## load data
 resp <- read.csv("/Users/fridahntika/Documents/DS340H/Capstone-Project/Data/atusresp-2023/atusresp_2023.dat")
@@ -60,234 +62,185 @@ actdf <- act %>%
   filter(TUTIER1CODE == 2 | TRTIER2 %in% childcareCodes) %>%
   select(TUCASEID, TUACTIVITY_N, TUTIER1CODE, TRTIER2, duration_mins)
 
-employed <- respdf %>% filter(TELFS == 1 | TELFS == 2) # for now only working with respondents
-employedGuardian <- rosdf %>% filter(TUCASEID %in% employed$TUCASEID)
-codes <- c(3,4,5)
-unemployed <- respdf %>% filter(TELFS %in% codes)
-unemployedGuardian <- rosdf %>% filter(TUCASEID %in% unemployed$TUCASEID)
-
-# ---------------------------analyzing hh chores ---------------------------
 houseChores <- actdf %>% filter(TUTIER1CODE == 2)
 # merge with household data
 choredf <- merge(df, houseChores, by = "TUCASEID", all = FALSE)
 choredf <- choredf %>% select(TUCASEID, TULINENO.x, TELFS, TEAGE, TESEX, TRCHILDNUM,
                               TUTIER1CODE, TRTIER2, duration_mins)
 
-## filter chores by employment status
-chores_employed <- choredf %>% 
-  filter(TUCASEID %in% employedGuardian$TUCASEID) %>%
-  mutate(status = "Employed")
-chores_unemployed <- choredf %>% 
-  filter(TUCASEID %in% unemployedGuardian$TUCASEID) %>%
-  mutate(status = "Unemployed")
-chores_both <- bind_rows(chores_unemployed, chores_employed)
-chores_summary <- chores_both %>% group_by(status) %>%
-  summarise(average_time = mean(duration_mins, na.rm = TRUE),
-            count = n())
-chores_summary
+# one row per person, columns are time spent on chores and childcare
+chores_per_person <- choredf %>% group_by(TUCASEID) %>%
+  summarise(chores_time = sum(duration_mins, na.rm = TRUE), TESEX = first(TESEX),
+    TELFS = first(TELFS), TEAGE = first(TEAGE), TRCHILDNUM = first(TRCHILDNUM), 
+    .groups = "drop")
 
-# filter chores by gender
-chores_summary2 <- choredf %>% group_by(TESEX) %>%
-  summarise(average_time = mean(duration_mins, na.rm = TRUE),
-            count = n())
-chores_summary2
+children <- actdf %>% filter(TRTIER2 %in% childcareCodes)
+# merge with household data
+childdf <- merge(df, children, by = "TUCASEID", all = FALSE)
+childcare_per_person <- childdf %>% group_by(TUCASEID) %>%
+  summarise(childcare_time = sum(duration_mins, na.rm = TRUE), TESEX = first(TESEX),
+            TELFS = first(TELFS), TEAGE = first(TEAGE), TRCHILDNUM = first(TRCHILDNUM),
+            .groups = "drop")
 
-# filter chores by employment status and gender
-chores_summary3 <- chores_both %>% group_by(status, TESEX) %>%
-  summarise(average_time = mean(duration_mins, na.rm = TRUE)) %>%
-  mutate(TESEX = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
-chores_summary3
+# Missing those who don't do chores: minutes on chores, childcare and whether they are employed
+# Combine chores and childcare
+combined <- full_join(chores_per_person, childcare_per_person, by = "TUCASEID") %>%
+  mutate(chores_time = replace_na(chores_time, 0), # put 0 if activity not done
+         childcare_time = replace_na(childcare_time, 0),
+         TESEX = coalesce(TESEX.x, TESEX.y), # merge the two columns
+         TELFS = coalesce(TELFS.x, TELFS.y),
+         TEAGE = coalesce(TEAGE.x, TEAGE.y),
+         TRCHILDNUM = coalesce(TRCHILDNUM.x, TRCHILDNUM.y)) %>%
+  select(TUCASEID, chores_time, childcare_time, TESEX, TELFS, TEAGE, TRCHILDNUM)
 
-## Visuals
-# box plot
-ggplot(chores_both, aes(x = status, y = duration_mins, fill = status)) +
-  geom_boxplot(alpha = 0.7, width = 0.5) +
-  labs(title = "Time Spent on Household Chores by Employment Status",
-       x = "Employment Status", y = "Daily Time Spent (minutes)") + theme_minimal()
+# employment status
+combined <- combined %>% 
+  mutate(status = case_when(TELFS %in% c(1, 2) ~ "Employed",
+    TELFS %in% c(3, 4, 5) ~ "Unemployed", TRUE ~ "Unknown"))
 
-## Linear Regression Models
-chores_both$TESEX <- factor(chores_both$TESEX, levels = c(1, 2), labels = c("Male", "Female"))
+# gender labels
+combined <- combined %>%
+  mutate(gender = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
 
-# Cross-validation split
+atus <- combined %>% select(TUCASEID, chores_time, childcare_time, status, gender, 
+                            TRCHILDNUM, TEAGE)
+atus <- atus %>% mutate(time_ratio = ifelse(childcare_time == 0, NA, chores_time / childcare_time))
+head(atus)
 set.seed(123)
-split <- initial_split(chores_both, prop = 0.7)
-train_chore <- training(split)
-test_chore <- testing(split)
+## Multivariate Regression Models
+# Cross-validation split
+split <- initial_split(atus, prop = 0.7)
+train <- training(split)
+test <- testing(split)
 
-chores.lm <- lm(duration_mins ~ status, data = train_chore)
-chores.lm2 <- lm(duration_mins ~ status + TEAGE + TESEX, data = train_chore)
-chores.lm3 <- lm(duration_mins ~ status + TEAGE + TESEX + TRCHILDNUM, data = train_chore)
-interaction.lm <- lm(duration_mins ~ status * TESEX, data = train_chore)
-interaction.lm2 <- lm(duration_mins ~ status * TRCHILDNUM, data = train_chore)
+# slr
+slr.lm <- lm(cbind(chores_time, childcare_time) ~ status, data = train)
+
+# adjust for age, sex, and number of children
+mlr.lm <- lm(cbind(chores_time, childcare_time) ~ status + TEAGE + gender, data = train)
+mlr.lm2 <- lm(cbind(chores_time, childcare_time) ~ status + TEAGE + gender + TRCHILDNUM, data = train)
+interact.lm <- lm(cbind(chores_time, childcare_time) ~ status * gender, data = train)
+interact.lm2 <- lm(cbind(chores_time, childcare_time) ~ status * TRCHILDNUM, data = train)
 
 # Evaluate models
-summary(chores.lm) # 5.026e-05
-summary(chores.lm2) # 0.003124
-summary(chores.lm3) # 0.003667
-summary(interaction.lm) # 0.003835
-summary(interaction.lm2) # 0.0007684
-
-# BIC for Model Comparison
-BIC(chores.lm) # 45622.07
-BIC(chores.lm2) # 45625.6
-BIC(chores.lm3) # 45631.63
-BIC(interaction.lm) # 45622.54
-BIC(interaction.lm2) # 45635.71
+summary(slr.lm) # 0.03939, 0.02534
+summary(mlr.lm) # 0.06434, 0.07571
+summary(mlr.lm2) # 0.06389, 0.07498
+summary(interact.lm) # 0.06193, 0.0287
+summary(interact.lm2) # 0.03778, 0.02654
 
 # RMSE
 train_rmse <- function(model) sqrt(mean(model$residuals^2))
+train_rmse(slr.lm) # 135.3572
+train_rmse(mlr.lm) # 132.6421
+train_rmse(mlr.lm2) # 132.6225
+train_rmse(interact.lm) # 134.2748
+train_rmse(interact.lm2) # 135.2553
 
-train_rmse(chores.lm) # 49.54283
-train_rmse(chores.lm2) # 49.46663
-train_rmse(chores.lm3) # 49.45315
-train_rmse(interaction.lm) # 49.44898
-train_rmse(interaction.lm2) # 49.52504
+# checking mlr.lm model assumptions
+chore_coef <- c(Intercept = 66.818, statusUnemployed = 62.1713, TEAGE = 1.1145, genderFemale = 46.6792)
+child_coef <- c(Intercept = 259.8826, statusUnemployed = 55.778, TEAGE = -4.1997, genderFemale = 9.6143)
 
-# Evaluating on test set
+# Add predictions to the dataset
+atus <- atus %>% mutate(statusN = ifelse(status == "Unemployed", 1, 0),
+                        genderN = ifelse(gender == "Female", 1, 0))
+
+atus <- atus %>% mutate(chore_predicted = chore_coef["Intercept"] + 
+                          chore_coef["statusUnemployed"] * statusN +
+                          chore_coef["TEAGE"] * TEAGE + 
+                          chore_coef["genderFemale"] * genderN,
+                        child_predicted = child_coef["Intercept"] + 
+                          child_coef["statusUnemployed"] * statusN +
+                          child_coef["TEAGE"] * TEAGE + 
+                          child_coef["genderFemale"] * genderN)
+
+# get residuals
+atus <- atus %>% mutate(chore_residual = chores_time - chore_predicted,
+                        child_residual = childcare_time - child_predicted)
+
+# Residual Plots
+ggplot(atus, aes(x = chore_predicted, y = chore_residual)) +
+  geom_point(alpha = 0.5) + geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residuals vs Predicted: Chore Time", x = "Predicted Chore Time", 
+       y = "Residuals")
+
+ggplot(atus, aes(x = child_predicted, y = child_residual)) +
+  geom_point(alpha = 0.5) + geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residuals vs Predicted: Childcare Time", x = "Predicted Childcare Time", 
+       y = "Residuals")
+
+# Histogram of Residuals
+ggplot(atus, aes(x = chore_residual)) +
+  geom_histogram(bins = 30, fill = "blue", alpha = 0.7) +
+  labs(title = "Histogram of Residuals: Chore Time", x = "Residuals", y = "Count")
+
+ggplot(atus, aes(x = child_residual)) +
+  geom_histogram(bins = 30, fill = "green", alpha = 0.7) +
+  labs(title = "Histogram of Residuals: Childcare Time", x = "Residuals", y = "Count")
+
+# QQ Plots
+qqnorm(atus$chore_residual, main = "QQ Plot: Chore Time Residuals")
+qqline(atus$chore_residual)
+
+qqnorm(atus$child_residual, main = "QQ Plot: Childcare Time Residuals")
+qqline(atus$child_residual)
+
+## Models comparing ratios
+# Fit models to predict the ratio
+# slr
+rslr.lm <- lm(time_ratio ~ status, data = train)
+
+# adjust for age, sex, and number of children
+rmlr.lm <- lm(time_ratio ~ status + TEAGE + gender, data = train)
+rmlr.lm2 <- lm(time_ratio ~ status + TEAGE + gender + TRCHILDNUM, data = train)
+rinteract.lm <- lm(time_ratio ~ status * gender, data = train)
+rinteract.lm2 <- lm(time_ratio ~ status * TRCHILDNUM, data = train)
+
+# evaluate models on test data
 evaluate_model <- function(model, test_data) {
-  predictions <- predict(model, test_data)
-  rmse <- sqrt(mean((test_data$duration_mins - predictions)^2))
-  r_squared <- 1 - sum((test_data$duration_mins - predictions)^2) / 
-    sum((test_data$duration_mins - mean(test_data$duration_mins))^2)
-  list(RMSE = rmse, R2 = r_squared)
-}
+  predictions <- predict(model, newdata = test_data)
+  actuals <- test_data$time_ratio
+  rmse <- sqrt(mean((actuals - predictions)^2, na.rm = TRUE))
+  #r_squared <- 1 - sum((actuals - predictions)^2) / sum((actuals - mean(actuals, na.rm = TRUE))^2)
+  bic <- BIC(model)
+  list(RMSE = rmse, BIC = bic) 
+  }
 
-evaluate_model(chores.lm, test_chore)
-evaluate_model(chores.lm2, test_chore)
-evaluate_model(chores.lm3, test_chore)
-evaluate_model(interaction.lm, test_chore)
-evaluate_model(interaction.lm2, test_chore)
-
-# Evaluate on whole dataset
-evaluate_model(chores.lm, chores_both)
-evaluate_model(chores.lm2, chores_both)
-evaluate_model(chores.lm3, chores_both)
-evaluate_model(interaction.lm, chores_both)
-evaluate_model(interaction.lm2, chores_both)
-
-# ---------------------------analyzing childcare ---------------------------
-# Extract childcare activities and assign Type
-children <- actdf %>%
-  filter(TRTIER2 %in% childcareCodes) %>%
-  mutate(Type = ifelse(TUTIER1CODE == 4, "Non-HH", "HH"))
-
-# Merge with household data
-childdf <- merge(df, children, by = "TUCASEID", all = FALSE)
-
-# Find if the guardian is with a child
-whoChild <- who %>% filter(TUCASEID %in% childdf$TUCASEID)
-withChild <- merge(whoChild, rosdf, by = c("TUCASEID", "TULINENO")) %>%
-  filter(Under15 == TRUE)
-
-# Create a dataframe with childcare activities where a child is present
-new_df <- merge(childdf, withChild, by = c("TUCASEID", "TUACTIVITY_N"), all.x = TRUE, all.y = FALSE)
-
-# Merge employment status and gender with the childcare data
-employed_childcare <- childdf %>% filter(TUCASEID %in% employedGuardian$TUCASEID) %>% 
-  mutate(status = "Employed")
-unemployed_childcare <- childdf %>% filter(TUCASEID %in% unemployedGuardian$TUCASEID) %>% 
-  mutate(status = "Unemployed")
-children_both <- bind_rows(employed_childcare, unemployed_childcare)
-
-# Summarize average time spent on childcare by type, employment status, and gender
-childcare_summary <- children_both %>%
-  group_by(Type, status, TESEX) %>%
-  summarise(average_time = mean(duration_mins, na.rm = TRUE)) %>%
-  mutate(TESEX = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
-childcare_summary
+evaluate_model(rslr.lm, test) # 8.16, 7843
+evaluate_model(rmlr.lm, test) # 8.05, 7854
+evaluate_model(rmlr.lm2, test) # 8.01, 7860
+evaluate_model(rinteract.lm, test) # 8.13, 7855
+evaluate_model(rinteract.lm2, test) #8.14, 7855
 
 ## Visuals
-# generally how much time is spent with hh vs non-hh children?
-# logged
-ggplot(children, aes(x=Type, y=log(duration_mins), fill = Type)) + geom_violin() +
-  labs(title= "Time dedicated to Household v Non-Household Children", x="Child type", y="Log Time Spent (mins)")
-# not logged
-ggplot(children, aes(x=Type, y=duration_mins, fill = Type)) + geom_violin() +
-  labs(title= "Time dedicated to Household v Non-Household Children", x="Child type", y="Time Spent (mins)")
+# Violin + boxplots for Chore Time
+ggplot(atus, aes(x = status, y = chores_time, fill = gender)) +
+  geom_violin(alpha = 0.5) + # highlights the boxplots compared to violins
+  geom_boxplot(width = 0.2, position = position_dodge(0.9)) + # boxplots go inside
+  labs(title = "Distribution of Chore Time by Employment Status and Gender",
+    x = "Employment Status", y = "Chore Time (minutes)") +
+  scale_fill_manual(values = c("Male" = "purple", "Female" = "pink")) +
+  theme_minimal()
 
-# time on childcare activities by type and employment status
-# ggplot(childcare_summary, aes(x = status, y = average_time, fill = Type)) +
-#   geom_bar(stat = "identity", position = position_dodge(width = 0.6), width = 0.5) +
-#   labs(title = "Average Daily Time on Childcare Activities by Type and Employment Status",
-#        x = "Employment Status", y = "Average Time (minutes)", fill = "Childcare Type") +
-#   theme_minimal()
+# Violin + boxplts for Childcare Time
+ggplot(atus, aes(x = status, y = childcare_time, fill = gender)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, position = position_dodge(0.9)) +
+  labs(title = "Distribution of Childcare Time by Employment Status and Gender",
+    x = "Employment Status", y = "Childcare Time (minutes)") +
+  scale_fill_manual(values = c("Male" = "blue", "Female" = "green")) +
+  theme_minimal()
 
-## Linear Regression Models
-# Cross-validation split
-split2 <- initial_split(children_both, prop = 0.7)
-train_child <- training(split2)
-test_child <- testing(split2)
+# proportions on tasks by employment status
+proportions <- atus %>% group_by(status) %>%
+  summarise(mean_chores = mean(chores_time, na.rm = TRUE),
+    mean_childcare = mean(childcare_time, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(mean_chores, mean_childcare), names_to = "activity", 
+               values_to = "time")
 
-child.lm <- lm(duration_mins ~ status, data = train_child)
-child.lm2 <- lm(duration_mins ~ status + TEAGE + TESEX, data = train_child)
-child.lm3 <- lm(duration_mins ~ status + TEAGE + TESEX + TRCHILDNUM, data = train_child)
-childInteraction.lm <- lm(duration_mins ~ status * TESEX, data = train_child)
-childInteraction.lm2 <- lm(duration_mins ~ status * TRCHILDNUM, data = train_child)
-
-# Evaluate models
-summary(child.lm) # 0.0002161
-summary(child.lm2) # 0.006413
-summary(child.lm3) # 0.00722
-summary(childInteraction.lm) # 0.007156
-summary(childInteraction.lm2) # 0.001041
-
-# BIC for Model Comparison
-BIC(child.lm) # 36806.11
-BIC(child.lm2) # 36801.04
-BIC(child.lm3) # 36806.39
-BIC(childInteraction.lm) # 36798.47
-BIC(childInteraction.lm2) # 36819.56
-
-# RMSE
-train_rmse(child.lm) # 51.2429
-train_rmse(child.lm2) # 51.08386
-train_rmse(child.lm3) # 51.0631
-train_rmse(childInteraction.lm) # 51.06475
-train_rmse(childInteraction.lm) # 51.06475
-
-# Evaluating on test set
-evaluate_model(child.lm, test_child)
-evaluate_model(child.lm2, test_child)
-evaluate_model(child.lm3, test_child)
-evaluate_model(childInteraction.lm, test_child)
-evaluate_model(childInteraction.lm, test_child)
-
-# Evaluate on whole data set
-evaluate_model(child.lm, children_both)
-evaluate_model(child.lm2, children_both)
-evaluate_model(child.lm3, children_both)
-evaluate_model(childInteraction.lm, children_both)
-evaluate_model(childInteraction.lm, children_both)
-
-## compare the times spent on both
-# Histogram for household chores
-ggplot(chores_both, aes(x = duration_mins, fill = status)) +
-  geom_histogram(binwidth = 10, alpha = 0.7, position = "identity") +
-  facet_wrap(~ status) + labs(title = "Variability in Time Spent on Household Chores",
-       x = "Time Spent (minutes)", y = "Frequency") + theme_minimal()
-
-# Histogram for childcare time
-ggplot(children_both, aes(x = duration_mins, fill = status)) +
-  geom_histogram(binwidth = 10, alpha = 0.7, position = "identity") +
-  facet_wrap(~ status) + labs(title = "Variability in Time Spent on Childcare",
-       x = "Time Spent (minutes)", y = "Frequency") + theme_minimal()
-
-chores_combined <- chores_combined %>%
-  mutate(ActivityType = "Household Chores")
-
-# childcare_combined <- childcare_combined %>%
-#   select(-Type) %>%  # Remove Type column
-#   mutate(ActivityType = "Childcare")
-
-# Combine the two summaries
-combined_summary <- bind_rows(chores_combined, childcare_combined) %>%
-  mutate(TESEX = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
-
-# Plot
-ggplot(combined_summary, aes(x = status, y = average_time, fill = ActivityType)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.6), width = 0.5) +
-  facet_wrap(~ TESEX, labeller = labeller(TESEX = c("Male" = "Male", "Female" = "Female"))) +
-  labs(title = "Average Time Spent on Household Chores and Childcare \nby Employment Status and Gender",
-       x = "Employment Status", y = "Average Time (minutes)", fill = "Activity Type") +
-  theme_minimal() +
-  scale_fill_manual(values = c("Household Chores" = "#8c564b", "Childcare" = "#9467bd"))
+ggplot(proportions, aes(x = status, y = time, fill = activity)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  labs(title = "Average Time Spent on Chores vs. Childcare by Employment Status",
+    x = "Employment Status", y = "Average Time (minutes)") +
+  scale_fill_manual(values = c("mean_chores" = "skyblue", "mean_childcare" = "orange"), 
+                    labels = c("Chores", "Childcare")) + theme_minimal()
