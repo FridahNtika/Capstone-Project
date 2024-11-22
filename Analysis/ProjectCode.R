@@ -158,7 +158,7 @@ atus <- atus %>% mutate(chore_predicted = chore_coef["Intercept"] +
 atus <- atus %>% mutate(chore_residual = chores_time - chore_predicted,
                         child_residual = childcare_time - child_predicted)
 
-# Residual Plots
+# Residual Plots # use jitter and transparent points
 ggplot(atus, aes(x = chore_predicted, y = chore_residual)) +
   geom_point(alpha = 0.5) + geom_hline(yintercept = 0, linetype = "dashed") +
   labs(title = "Residuals vs Predicted: Chore Time", x = "Predicted Chore Time", 
@@ -211,6 +211,13 @@ evaluate_model(rmlr.lm, test) # 8.05, 7854
 evaluate_model(rmlr.lm2, test) # 8.01, 7860
 evaluate_model(rinteract.lm, test) # 8.13, 7855
 evaluate_model(rinteract.lm2, test) #8.14, 7855
+
+# evaluate on whole dataset
+evaluate_model(rslr.lm, atus) # 21.46, 7843
+evaluate_model(rmlr.lm, atus) # 21.42, 7854
+evaluate_model(rmlr.lm2, atus) # 21.40, 7860
+evaluate_model(rinteract.lm, atus) # 21.44, 7855
+evaluate_model(rinteract.lm2, atus) # 21.44, 7855
 
 ## Visuals
 # Violin + boxplots for Chore Time
