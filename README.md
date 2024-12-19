@@ -15,20 +15,18 @@ The analysis uses 2023 data from the American Time Use Survey (ATUS):
   * Sex (male/female)
   * Age
   * Number of children
-  * Time spent on chores and childcare
+  * Proportion of time allocation to chores by childcare (outcome variable)
 
 ### Cleaning
 Households without children under 15 were excluded.
-Household also had to have at least one guardian between 27 and 60 years old inclusive
+Households also had to have at least one guardian between 27 and 60 years old, inclusive
 Data for only household chores and childcare activities was selected.
 
 ## Modeling
-The study utilized multiple linear regression (MLR) models, including interaction terms to examine combined effects of employment status and gender.
+The study utilized multiple linear regression (MLR) models, including interaction terms, to examine the combined effects of employment status and sex.
 The model with the interaction term Employment status * Sex was selected based on the adjusted R² and BIC values.
 Equation:
-Time Allocation Proportion = 0.1863 + 0.0874.Unemployed + 0.0798.Female 
-                             + 0.0104.Age - 0.0250.Children 
-                             - 0.0979.Unemployed*Female
+$ Time Allocation Proportion = 0.1863 + 0.0874.Unemployed + 0.0798.Female + 0.0104.Age - 0.0250.Children - 0.0979.Unemployed*Female
 ## Conclusion
 Employment status significantly impacts time allocation, with unemployed guardians spending more time on chores.
 Sex remains a strong predictor: females consistently allocate more time to chores, regardless of employment status.
