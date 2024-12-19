@@ -97,11 +97,11 @@ combined <- combined %>%
   mutate(status = case_when(TELFS %in% c(1, 2) ~ "Employed",
     TELFS %in% c(3, 4, 5) ~ "Unemployed", TRUE ~ "Unknown"))
 
-# gender labels
+# sex labels
 combined <- combined %>%
-  mutate(gender = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
+  mutate(sex = factor(TESEX, levels = c(1, 2), labels = c("Male", "Female")))
 
-atus <- combined %>% select(TUCASEID, chores_time, childcare_time, status, gender, 
+atus <- combined %>% select(TUCASEID, chores_time, childcare_time, status, sex, 
                             TRCHILDNUM, TEAGE)
 
 # getting proportions, can be 0
@@ -115,28 +115,28 @@ boxplot(atus$timeProp~atus$status)
 
 ## Visuals
 # Violin + boxplots for Chore Time
-ggplot(atus, aes(x = status, y = chores_time, fill = gender)) +
+ggplot(atus, aes(x = status, y = chores_time, fill = sex)) +
   geom_violin(alpha = 0.5) + # highlights the boxplots compared to violins
   geom_boxplot(width = 0.2, position = position_dodge(0.9)) + # boxplots go inside
-  labs(title = "Distribution of Chore Time by Employment Status and Gender",
+  labs(title = "Distribution of Chore Time by Employment Status and Sex",
        x = "Employment Status", y = "Chore Time (minutes)") +
-  scale_fill_manual(values = c("Male" = "purple", "Female" = "pink")) +
+  scale_fill_manual(values = c("Male" = "orange", "Female" = "cyan")) +
   theme_minimal()
 
 # Violin + boxplots for Childcare Time
-ggplot(atus, aes(x = status, y = childcare_time, fill = gender)) +
+ggplot(atus, aes(x = status, y = childcare_time, fill = sex)) +
   geom_violin(alpha = 0.5) +
   geom_boxplot(width = 0.2, position = position_dodge(0.9)) +
-  labs(title = "Distribution of Childcare Time by Employment Status and Gender",
+  labs(title = "Distribution of Childcare Time by Employment Status and Sex",
        x = "Employment Status", y = "Childcare Time (minutes)") +
-  scale_fill_manual(values = c("Male" = "blue", "Female" = "green")) +
+  scale_fill_manual(values = c("Male" = "orange", "Female" = "cyan")) +
   theme_minimal()
 
 # Violin + boxplots for time proportions
-ggplot(atus, aes(x = status, y = timeProp, fill = gender)) +
+ggplot(atus, aes(x = status, y = timeProp, fill = sex)) +
   geom_violin(alpha = 0.5) +
   geom_boxplot(width = 0.1, position = position_dodge(0.9), outlier.shape = NA) +
-  labs(title = "Proportion of Time Spent on Chores to Childcare \nby Employment Status and Gender",
+  labs(title = "Proportion of Time Spent on Chores to Childcare \nby Employment Status and Sex",
        x = "Employment Status", y = "Proportion of Chores Time") +
   scale_fill_manual(values = c("Male" = "orange", "Female" = "cyan")) +
   theme_minimal()
@@ -152,11 +152,11 @@ test <- testing(split)
 slr.lm <- lm(timeProp ~ status, data = train)
 
 # adjust for age, sex, and number of children
-mlr.lm <- lm(timeProp ~ status + TEAGE + gender, data = train)
-mlr.lm2 <- lm(timeProp ~ status + TEAGE + gender + TRCHILDNUM, data = train)
-interact.lm <- lm(timeProp ~ status * gender + TEAGE + TRCHILDNUM, data = train)
-interact.lm2 <- lm(timeProp ~ status * TRCHILDNUM + gender + TEAGE, data = train)
-noStatus <- lm(timeProp ~ gender + TEAGE + TRCHILDNUM, data = train)
+mlr.lm <- lm(timeProp ~ status + TEAGE + sex, data = train)
+mlr.lm2 <- lm(timeProp ~ status + TEAGE + sex + TRCHILDNUM, data = train)
+interact.lm <- lm(timeProp ~ status * sex + TEAGE + TRCHILDNUM, data = train)
+interact.lm2 <- lm(timeProp ~ status * TRCHILDNUM + sex + TEAGE, data = train)
+noStatus <- lm(timeProp ~ sex + TEAGE + TRCHILDNUM, data = train)
 
 # Evaluate models
 summary(slr.lm)
@@ -230,12 +230,12 @@ predictions <- predict(interact.lm, newdata = predictData, interval = "confidenc
 predictData <- predictData %>% mutate(fit = predictions[, "fit"], lwr = predictions[, "lwr"], upr = predictions[, "upr"])
 
 # Plotting the Confidence Intervals
-ggplot(predictData, aes(x = TEAGE, y = fit, color = gender, fill = gender)) +
+ggplot(predictData, aes(x = TEAGE, y = fit, color = sex, fill = sex)) +
   geom_line(size = 1) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2) +
-  labs(title = "Confidence Intervals for Time Proportion by Status and Gender",
+  labs(title = "Confidence Intervals for Time Proportion Allocation by Status and Sex",
     x = "Age", y = "Predicted Proportion of Time Spent on Chores") +
   facet_wrap(~status) + # Separate by employment status
-  scale_color_manual(values = c("Male" = "blue", "Female" = "pink")) +
-  scale_fill_manual(values = c("Male" = "blue", "Female" = "pink")) +
+  scale_color_manual(values = c("Male" = "orange", "Female" = "cyan")) +
+  scale_fill_manual(values = c("Male" = "orange", "Female" = "cyan")) +
   theme_minimal()
