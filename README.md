@@ -27,8 +27,10 @@ The study utilized multiple linear regression (MLR) models, including interactio
 The model with the interaction term Employment status * Sex was selected based on the adjusted R² and BIC values.
 Equation:
 $$
-Time Allocation Proportion = 0.1863 + 0.0874.Unemployed + 0.0798.Female + 0.0104.Age - 0.0250.Children - 0.0979.Unemployed*Female
+\text{Time Allocation Proportion} = 0.1863 + 0.0874 \cdot \text{Unemployed} + 0.0798 \cdot \text{Female} \\
++ 0.0104 \cdot \text{Age} - 0.0250 \cdot \text{Children} - 0.0979 \cdot (\text{Unemployed} \cdot \text{Female})
 $$
+
 ## Conclusion
 Employment status significantly impacts time allocation, with unemployed guardians spending more time on chores.
 Sex remains a strong predictor: females consistently allocate more time to chores, regardless of employment status.
