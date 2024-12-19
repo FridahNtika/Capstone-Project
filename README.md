@@ -1,1 +1,39 @@
-# Capstone-Project
+# Time Allocation to Chores and Childcare Among Employed and Unemployed Guardians
+_Fridah Karimi Ntika '25, Data Science Capstone_
+
+## Project Overview
+Balancing work responsibilities with household activities and childcare is a critical challenge, particularly for families with children under 15 years old. This study investigates how employment status, gender, and other demographic factors influence time spent on chores and childcare.
+
+## Research Question
+How does allocating time to household activities and childcare in the United States differ between employed and unemployed guardians (ages 27 to 60) of children under 15 years in 2023?
+
+## Data
+The analysis uses 2023 data from the American Time Use Survey (ATUS):
+* Dataset Size: 1566 observations and 7 variables
+* Variables Used:
+  * Employment status (employed/unemployed)
+  * Sex (male/female)
+  * Age
+  * Number of children
+  * Time spent on chores and childcare
+
+### Cleaning
+Households without children under 15 were excluded.
+Household also had to have at least one guardian between 27 and 60 years old inclusive
+Data for only household chores and childcare activities was selected.
+
+## Modeling
+The study utilized multiple linear regression (MLR) models, including interaction terms to examine combined effects of employment status and gender.
+The model with the interaction term Employment status * Sex was selected based on the adjusted R² and BIC values.
+Equation:
+Time Allocation Proportion = 0.1863 + 0.0874.Unemployed + 0.0798.Female 
+                             + 0.0104.Age - 0.0250.Children 
+                             - 0.0979.Unemployed*Female
+## Conclusion
+Employment status significantly impacts time allocation, with unemployed guardians spending more time on chores.
+Sex remains a strong predictor: females consistently allocate more time to chores, regardless of employment status.
+Age and the number of children also contribute to time allocation patterns.
+The interaction between employment status and sex highlights nuanced differences, particularly among unemployed males and females.
+
+## Technologies Used
+R
